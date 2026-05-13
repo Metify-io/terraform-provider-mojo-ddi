@@ -66,6 +66,7 @@ func (r *IPAddressResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:            true,
 				Computed:            true,
 				MarkdownDescription: "VRF this address belongs to.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"status": schema.StringAttribute{
 				Optional:            true,

@@ -71,6 +71,7 @@ func (r *IPRangeResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:            true,
 				Computed:            true,
 				MarkdownDescription: "VRF this range belongs to.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"status": schema.StringAttribute{
 				Optional:            true,
