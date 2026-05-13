@@ -23,6 +23,7 @@ lint:
 
 generate:
 	go run ./tools/codegen -schema docs/mcp-tool-schemas/ipam.json -out internal/resources/ipam/
+	go run ./tools/codegen -schema docs/mcp-tool-schemas/ddi.json -out internal/resources/ddi/
 
 clean:
 	rm -f $(BINARY)
