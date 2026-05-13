@@ -1,0 +1,187 @@
+[
+  {
+    "name": "ipam.create_vrf",
+    "description": "Create a new VRF (Virtual Routing and Forwarding) instance in MOJO IPAM.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name for this VRF."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "rd": {
+          "type": "string",
+          "description": "BGP Route Distinguisher in ASN:NN format (e.g. 65000:100)."
+        },
+        "enforce_unique": {
+          "type": "boolean",
+          "description": "Prevent duplicate IP assignments within this VRF. Defaults to true."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.read_vrf",
+    "description": "Retrieve a VRF by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "MOJO-assigned UUID of the VRF."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.update_vrf",
+    "description": "Update a VRF. Partial update: only supplied fields are modified.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "UUID of the VRF to update."
+        },
+        "name": { "type": "string", "description": "New name." },
+        "description": { "type": "string", "description": "New description." },
+        "rd": { "type": "string", "description": "New Route Distinguisher." },
+        "enforce_unique": { "type": "boolean", "description": "Toggle unique enforcement." }
+      }
+    }
+  },
+  {
+    "name": "ipam.delete_vrf",
+    "description": "Delete a VRF. Fails if the VRF contains prefixes or IP addresses.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "UUID of the VRF to delete."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.create_vlan",
+    "description": "Create a VLAN definition.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["vid", "name"],
+      "properties": {
+        "vid": {
+          "type": "integer",
+          "description": "VLAN ID (1-4094)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name."
+        },
+        "site_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Site this VLAN belongs to. Optional."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.read_vlan",
+    "description": "Retrieve a VLAN by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid", "description": "VLAN UUID." }
+      }
+    }
+  },
+  {
+    "name": "ipam.update_vlan",
+    "description": "Update a VLAN. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "site_id": { "type": "string", "format": "uuid" },
+        "description": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "ipam.delete_vlan",
+    "description": "Delete a VLAN.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "ipam.create_prefix",
+    "description": "Create a CIDR prefix. Auto-nests under existing parent prefixes.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["cidr"],
+      "properties": {
+        "cidr": {
+          "type": "string",
+          "format": "cidr",
+          "description": "CIDR notation (e.g. 10.0.0.0/24)."
+        },
+        "vrf_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "VRF this prefix belongs to."
+        },
+        "vlan_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "VLAN this prefix is tied to."
+        },
+        "description": {
+          "type": "string"
+        },
+        "is_pool": {
+          "type": "boolean",
+          "description": "Mark this prefix as an address pool (for DHCP etc.)."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.next_available_ip",
+    "description": "Return the next unallocated IP address within a prefix without reserving it.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["prefix_id"],
+      "properties": {
+        "prefix_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "UUID of the prefix to query."
+        }
+      }
+    }
+  }
+]

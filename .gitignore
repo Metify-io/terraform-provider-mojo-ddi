@@ -1,0 +1,8 @@
+terraform-provider-mojo-ddi
+dist/
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.idea/
+.vscode/
