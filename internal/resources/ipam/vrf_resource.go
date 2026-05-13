@@ -134,6 +134,9 @@ func (r *VRFResource) Create(ctx context.Context, req resource.CreateRequest, re
 	if args["rd"] == "" {
 		delete(args, "rd")
 	}
+	if plan.Enforce.IsNull() || plan.Enforce.IsUnknown() {
+		delete(args, "enforce_unique")
+	}
 
 	var apiObj vrfAPIModel
 	if err := r.client.CallToolJSON(ctx, "ipam.create_vrf", args, &apiObj); err != nil {

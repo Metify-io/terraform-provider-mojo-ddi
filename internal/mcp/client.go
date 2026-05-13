@@ -285,11 +285,19 @@ func (c *Client) notify(ctx context.Context, method string, params any) error {
 
 	body, _ := json.Marshal(req)
 
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build notify request: %w", err)
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	c.mu.Lock()
+	if c.sessionID != "" {
+		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
+	}
+	c.mu.Unlock()
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
