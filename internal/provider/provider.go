@@ -75,7 +75,7 @@ func (p *MojoProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 	}
 }
 
-// Configure initialises the MCP client and stores it in resp.ResourceData
+// Configure initializes the MCP client and stores it in resp.ResourceData
 // so resources and data sources can access it.
 func (p *MojoProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
 	var config MojoProviderModel
@@ -110,7 +110,7 @@ func (p *MojoProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Failed to connect to MOJO MCP server",
-			"Could not initialise the MCP client: "+err.Error(),
+			"Could not initialize the MCP client: "+err.Error(),
 		)
 		return
 	}
