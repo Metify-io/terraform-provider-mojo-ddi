@@ -357,7 +357,7 @@ func (r *{{ .GoName }}Resource) Delete(ctx context.Context, req resource.DeleteR
 		return
 	}
 
-	err := r.client.CallToolJSON(ctx, "{{ .DeleteTool }}", map[string]any{"id": state.ID.ValueString()}, nil)
+	_, err := r.client.CallTool(ctx, "{{ .DeleteTool }}", map[string]any{"id": state.ID.ValueString()})
 	if err != nil && !mcp.IsNotFound(err) {
 		resp.Diagnostics.AddError("Failed to delete {{ .ResourceName }}", err.Error())
 	}
@@ -512,7 +512,19 @@ func toLowerCamel(s string) string {
 		return pascal
 	}
 	runes := []rune(pascal)
-	runes[0] = unicode.ToLower(runes[0])
+	// Lowercase all leading uppercase runes (handles acronyms like VRF → vrf,
+	// IPAddress → ipAddress, DHCPScope → dhcpScope).
+	for i := 0; i < len(runes); i++ {
+		if !unicode.IsUpper(runes[i]) {
+			break
+		}
+		// If this uppercase char is followed by a lowercase char, keep it
+		// uppercase (it starts the next word). Exception: the first char.
+		if i > 0 && i+1 < len(runes) && unicode.IsLower(runes[i+1]) {
+			break
+		}
+		runes[i] = unicode.ToLower(runes[i])
+	}
 	return string(runes)
 }
 
