@@ -1,0 +1,29 @@
+# Copyright (c) Metify, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosimple
+    - gofmt
+    - misspell
+
+linters-settings:
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+    - path: tools/codegen/
+      linters:
+        - errcheck

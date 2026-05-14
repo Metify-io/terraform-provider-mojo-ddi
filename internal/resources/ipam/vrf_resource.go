@@ -35,18 +35,18 @@ type VRFResourceModel struct {
 	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
-	RD          types.String `tfsdk:"rd"` // Route Distinguisher (optional)
+	RD          types.String `tfsdk:"rd"`             // Route Distinguisher (optional)
 	Enforce     types.Bool   `tfsdk:"enforce_unique"` // enforce unique IP space
 }
 
 // vrfAPIModel is the JSON shape returned/accepted by the MCP server.
 // Field names mirror the MOJO coordinator model.
 type vrfAPIModel struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	RD          string `json:"rd,omitempty"`
-	EnforceUnique bool `json:"enforce_unique"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	RD            string `json:"rd,omitempty"`
+	EnforceUnique bool   `json:"enforce_unique"`
 }
 
 // -------------------------------------------------------------------
