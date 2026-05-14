@@ -8,7 +8,7 @@ zones/records via the MOJO MCP server.
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.8
-- [Go](https://golang.org/doc/install) >= 1.23 (to build the provider)
+- [Go](https://golang.org/doc/install) >= 1.25 (to build the provider)
 - A running MOJO instance with MCP server enabled
 
 ## Usage

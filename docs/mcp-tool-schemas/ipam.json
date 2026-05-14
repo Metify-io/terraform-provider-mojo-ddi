@@ -170,6 +170,43 @@
     }
   },
   {
+    "name": "ipam.read_prefix",
+    "description": "Retrieve a prefix by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid", "description": "Prefix UUID." }
+      }
+    }
+  },
+  {
+    "name": "ipam.update_prefix",
+    "description": "Update a prefix. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "vrf_id": { "type": "string", "format": "uuid" },
+        "vlan_id": { "type": "string", "format": "uuid" },
+        "description": { "type": "string" },
+        "is_pool": { "type": "boolean" }
+      }
+    }
+  },
+  {
+    "name": "ipam.delete_prefix",
+    "description": "Delete a prefix. Fails if the prefix contains child prefixes or IP addresses.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
     "name": "ipam.next_available_ip",
     "description": "Return the next unallocated IP address within a prefix without reserving it.",
     "inputSchema": {

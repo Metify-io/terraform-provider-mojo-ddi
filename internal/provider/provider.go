@@ -9,6 +9,7 @@ import (
 
 	ipamdatasources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/datasources/ipam"
 	imcp "github.com/Metify-io/terraform-provider-mojo-ddi/internal/mcp"
+	ddiresources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/resources/ddi"
 	ipamresources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/resources/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/function"
@@ -122,16 +123,17 @@ func (p *MojoProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 // Resources returns all managed resource implementations.
 func (p *MojoProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		// IPAM
 		ipamresources.NewVRFResource,
-		// Phase 1 week 1 — add as implemented:
-		// ipamresources.NewVLANResource,
-		// ipamresources.NewPrefixResource,
-		// ipamresources.NewIPAddressResource,
-		// ipamresources.NewIPRangeResource,
-		// ddiresources.NewDHCPScopeResource,
-		// ddiresources.NewDHCPReservationResource,
-		// ddiresources.NewDNSZoneResource,
-		// ddiresources.NewDNSRecordResource,
+		ipamresources.NewVLANResource,
+		ipamresources.NewPrefixResource,
+		ipamresources.NewIPAddressResource,
+		ipamresources.NewIPRangeResource,
+		// DDI
+		ddiresources.NewDHCPScopeResource,
+		ddiresources.NewDHCPReservationResource,
+		ddiresources.NewDNSZoneResource,
+		ddiresources.NewDNSRecordResource,
 	}
 }
 

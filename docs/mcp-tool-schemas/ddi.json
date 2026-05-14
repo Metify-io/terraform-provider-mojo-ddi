@@ -1,0 +1,420 @@
+[
+  {
+    "name": "ipam.create_ip_address",
+    "description": "Allocate an IP address within MOJO IPAM.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["address"],
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "IP address in CIDR notation (e.g. 10.0.0.5/24) or plain (e.g. 10.0.0.5)."
+        },
+        "vrf_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "VRF this address belongs to."
+        },
+        "status": {
+          "type": "string",
+          "description": "Allocation status: active, reserved, deprecated, dhcp. Defaults to active."
+        },
+        "dns_name": {
+          "type": "string",
+          "description": "FQDN for automatic forward/reverse DNS registration."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.read_ip_address",
+    "description": "Retrieve an IP address by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid", "description": "IP address UUID." }
+      }
+    }
+  },
+  {
+    "name": "ipam.update_ip_address",
+    "description": "Update an IP address. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "description": "New allocation status." },
+        "dns_name": { "type": "string", "description": "New DNS name." },
+        "description": { "type": "string", "description": "New description." }
+      }
+    }
+  },
+  {
+    "name": "ipam.delete_ip_address",
+    "description": "Release an IP address allocation.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "ipam.create_ip_range",
+    "description": "Create a contiguous IP range within a prefix.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["start_address", "end_address"],
+      "properties": {
+        "start_address": {
+          "type": "string",
+          "description": "First address in range (e.g. 10.0.0.100)."
+        },
+        "end_address": {
+          "type": "string",
+          "description": "Last address in range (e.g. 10.0.0.200)."
+        },
+        "vrf_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "VRF this range belongs to."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status: active, reserved, deprecated. Defaults to active."
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "ipam.read_ip_range",
+    "description": "Retrieve an IP range by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "ipam.update_ip_range",
+    "description": "Update an IP range. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "ipam.delete_ip_range",
+    "description": "Delete an IP range.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.create_scope",
+    "description": "Create a Kea DHCP scope bound to a MOJO prefix.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["prefix_id"],
+      "properties": {
+        "prefix_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "MOJO prefix UUID this scope serves."
+        },
+        "lease_time": {
+          "type": "integer",
+          "description": "Default lease time in seconds. Defaults to 3600."
+        },
+        "gateway": {
+          "type": "string",
+          "description": "Default gateway (option routers) for clients."
+        },
+        "dns_servers": {
+          "type": "string",
+          "description": "Comma-separated DNS servers (option domain-name-servers)."
+        },
+        "domain_name": {
+          "type": "string",
+          "description": "Domain name pushed to DHCP clients."
+        },
+        "pxe_enabled": {
+          "type": "boolean",
+          "description": "Enable PXE boot options (next-server, filename). Defaults to false."
+        },
+        "pxe_server": {
+          "type": "string",
+          "description": "TFTP/HTTP server for PXE boot. Required if pxe_enabled is true."
+        },
+        "pxe_filename": {
+          "type": "string",
+          "description": "PXE boot filename (e.g. ipxe.efi). Required if pxe_enabled is true."
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "dhcp.read_scope",
+    "description": "Retrieve a DHCP scope by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.update_scope",
+    "description": "Update a DHCP scope. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "lease_time": { "type": "integer" },
+        "gateway": { "type": "string" },
+        "dns_servers": { "type": "string" },
+        "domain_name": { "type": "string" },
+        "pxe_enabled": { "type": "boolean" },
+        "pxe_server": { "type": "string" },
+        "pxe_filename": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.delete_scope",
+    "description": "Delete a DHCP scope and remove Kea configuration.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.create_reservation",
+    "description": "Create a static DHCP reservation (MAC-to-IP binding) in Kea.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["scope_id", "mac_address", "ip_address"],
+      "properties": {
+        "scope_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "DHCP scope this reservation belongs to."
+        },
+        "mac_address": {
+          "type": "string",
+          "description": "Client MAC address (e.g. aa:bb:cc:dd:ee:ff)."
+        },
+        "ip_address": {
+          "type": "string",
+          "description": "Reserved IP address."
+        },
+        "hostname": {
+          "type": "string",
+          "description": "Hostname to assign to client."
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "dhcp.read_reservation",
+    "description": "Retrieve a DHCP reservation by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.update_reservation",
+    "description": "Update a DHCP reservation. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "mac_address": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "hostname": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "dhcp.delete_reservation",
+    "description": "Delete a DHCP reservation.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dns.create_zone",
+    "description": "Create a PowerDNS zone.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Zone name (e.g. example.com or 0.168.192.in-addr.arpa for reverse)."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Zone kind: Native, Master, Slave. Defaults to Native."
+        },
+        "nameservers": {
+          "type": "string",
+          "description": "Comma-separated nameserver FQDNs (e.g. ns1.example.com,ns2.example.com)."
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "dns.read_zone",
+    "description": "Retrieve a DNS zone by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dns.update_zone",
+    "description": "Update a DNS zone. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "kind": { "type": "string" },
+        "nameservers": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "dns.delete_zone",
+    "description": "Delete a DNS zone and all its records.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dns.create_record",
+    "description": "Create a DNS record within a PowerDNS zone.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["zone_id", "name", "record_type", "value"],
+      "properties": {
+        "zone_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "DNS zone this record belongs to."
+        },
+        "name": {
+          "type": "string",
+          "description": "Record name (e.g. www, @ for apex, or FQDN)."
+        },
+        "record_type": {
+          "type": "string",
+          "description": "Record type: A, AAAA, CNAME, PTR, MX, TXT, SRV, NS."
+        },
+        "value": {
+          "type": "string",
+          "description": "Record value (e.g. IP address, hostname, TXT content)."
+        },
+        "ttl": {
+          "type": "integer",
+          "description": "Time to live in seconds. Defaults to 300."
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Priority for MX and SRV records."
+        }
+      }
+    }
+  },
+  {
+    "name": "dns.read_record",
+    "description": "Retrieve a DNS record by UUID.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  },
+  {
+    "name": "dns.update_record",
+    "description": "Update a DNS record. Partial update.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "value": { "type": "string" },
+        "ttl": { "type": "integer" },
+        "priority": { "type": "integer" }
+      }
+    }
+  },
+  {
+    "name": "dns.delete_record",
+    "description": "Delete a DNS record.",
+    "inputSchema": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+]
