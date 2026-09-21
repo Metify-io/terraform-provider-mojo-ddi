@@ -1,4 +1,4 @@
-terraform-provider-mojo-ddi
+/terraform-provider-mojo-ddi
 dist/
 .terraform/
 *.tfstate
