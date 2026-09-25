@@ -190,19 +190,44 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 // CallToolJSON calls a tool and unmarshals the first text content block as JSON
 // into dest. This is the standard pattern for CRUD operations.
 func (c *Client) CallToolJSON(ctx context.Context, tool string, args map[string]any, dest any) error {
-	result, err := c.CallTool(ctx, tool, args)
+	text, err := c.CallToolText(ctx, tool, args)
 	if err != nil {
 		return err
 	}
 
-	if len(result.Content) == 0 {
-		return fmt.Errorf("tool %q returned empty content", tool)
-	}
-
-	if err := json.Unmarshal([]byte(result.Content[0].Text), dest); err != nil {
+	if err := json.Unmarshal([]byte(text), dest); err != nil {
 		return fmt.Errorf("unmarshal tool %q response: %w", tool, err)
 	}
 
+	return nil
+}
+
+// CallToolText calls a tool and returns the first text content block verbatim.
+// Several mojo-mcp tools return either a JSON document or a plain-text error
+// message in the same channel, so callers that need both should use this and
+// decide per payload (see ParseToolText).
+func (c *Client) CallToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
+	result, err := c.CallTool(ctx, tool, args)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result.Content) == 0 {
+		return "", fmt.Errorf("tool %q returned empty content", tool)
+	}
+
+	return result.Content[0].Text, nil
+}
+
+// ParseToolText unmarshals a text content block into dest. mojo-mcp handlers
+// signal failures two ways: a JSON-RPC error (already surfaced by CallTool) or
+// a plain-text message inside a successful result ("Invalid UUID ...",
+// "Baseline ... not found"). When the payload is not JSON it is returned as a
+// tool-level error so the whole message reaches the Terraform diagnostic.
+func ParseToolText(tool, text string, dest any) error {
+	if err := json.Unmarshal([]byte(text), dest); err != nil {
+		return &MCPError{Code: "tool_message", Message: strings.TrimSpace(text)}
+	}
 	return nil
 }
 
@@ -389,21 +414,32 @@ func asMCPError(err error, target **MCPError) bool {
 
 // mapRPCError converts a JSON-RPC error to a typed MCPError.
 func mapRPCError(e *rpcError) error {
-	// Try to parse a MOJO-specific error payload from Data
+	// Try to parse a MOJO-specific error payload from Data. The actuation
+	// boundary carries structured refusals here — e.g. the quota gate sends
+	// {"error": "quota_exceeded", "dimension": ..., "pool": ...}.
 	var mojoErr struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
+		Error   string `json:"error"`
 	}
 	if e.Data != nil {
 		_ = json.Unmarshal(e.Data, &mojoErr)
 	}
 
-	if mojoErr.Code != "" {
-		return &MCPError{Code: mojoErr.Code, Message: mojoErr.Message}
+	code := mojoErr.Code
+	if code == "" {
+		code = mojoErr.Error
+	}
+	if code != "" {
+		msg := mojoErr.Message
+		if msg == "" {
+			msg = e.Message
+		}
+		return &MCPError{Code: code, Message: msg}
 	}
 
 	// Fall back to generic mapping by RPC error code
-	code := "unknown"
+	code = "unknown"
 	switch e.Code {
 	case -32001:
 		code = "resource_not_found"

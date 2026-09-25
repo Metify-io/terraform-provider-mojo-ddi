@@ -7,8 +7,10 @@ import (
 	"context"
 	"os"
 
+	actuationdatasources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/datasources/actuation"
 	ipamdatasources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/datasources/ipam"
 	imcp "github.com/Metify-io/terraform-provider-mojo-ddi/internal/mcp"
+	actuationresources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/resources/actuation"
 	ddiresources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/resources/ddi"
 	ipamresources "github.com/Metify-io/terraform-provider-mojo-ddi/internal/resources/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -134,6 +136,9 @@ func (p *MojoProvider) Resources(_ context.Context) []func() resource.Resource {
 		ddiresources.NewDHCPReservationResource,
 		ddiresources.NewDNSZoneResource,
 		ddiresources.NewDNSRecordResource,
+		// Governed actuation (ADR-0031)
+		actuationresources.NewServerResource,
+		actuationresources.NewFirmwareBaselineResource,
 	}
 }
 
@@ -142,6 +147,7 @@ func (p *MojoProvider) DataSources(_ context.Context) []func() datasource.DataSo
 	return []func() datasource.DataSource{
 		ipamdatasources.NewNextAvailableIPDataSource,
 		// ipamdatasources.NewPrefixDataSource,
+		actuationdatasources.NewBaselineEvaluationDataSource,
 	}
 }
 
