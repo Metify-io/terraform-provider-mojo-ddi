@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -36,6 +37,7 @@ type FirmwareBaselineResourceModel struct {
 	ID               types.String `tfsdk:"id"`
 	SerialNumber     types.String `tfsdk:"serial_number"`
 	ServerID         types.String `tfsdk:"server_id"`
+	NodeID           types.String `tfsdk:"node_id"`
 	BaselineID       types.String `tfsdk:"baseline_id"`
 	ApprovalToken    types.String `tfsdk:"approval_token"`
 	DryRun           types.Bool   `tfsdk:"dry_run"`
@@ -76,13 +78,18 @@ Destroy removes the binding from state only — a baseline cannot be un-applied.
 			},
 			"server_id": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
-				MarkdownDescription: "MOJO node UUID. Set explicitly or resolved from `serial_number`.",
+				MarkdownDescription: "Pin a MOJO node UUID explicitly instead of resolving `serial_number`. When both are set they must agree.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+			},
+			"node_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Resolved MOJO node UUID the baseline applies to.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"baseline_id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Baseline UUID to converge the node to.",
+				MarkdownDescription: "Baseline UUID to converge the node to. Part of the resource ID, so changing it replaces the binding.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"approval_token": schema.StringAttribute{
 				Optional:            true,
@@ -93,7 +100,8 @@ Destroy removes the binding from state only — a baseline cannot be un-applied.
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				MarkdownDescription: "Rehearse `apply_baseline` through every gate without actuating (the ledger intent closes `planned`).",
+				MarkdownDescription: "Rehearse `apply_baseline` through every gate without actuating (the ledger intent closes `planned`). Changing this replaces the resource so a rehearsal never silently masquerades as a live converge.",
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"compliance_status": schema.StringAttribute{
 				Computed:            true,
@@ -146,6 +154,20 @@ func (r *FirmwareBaselineResource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 
+	// Resolve from configuration, not plan: a computed server_id carried over
+	// from prior state must not pin a replacement to the previous node.
+	var config FirmwareBaselineResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	serverID, err := ResolveServerID(ctx, r.client, config.ServerID.ValueString(), config.SerialNumber.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to resolve node", err.Error())
+		return
+	}
+	plan.NodeID = types.StringValue(serverID)
+
 	if !r.apply(ctx, &plan, &resp.Diagnostics) {
 		return
 	}
@@ -165,7 +187,7 @@ func (r *FirmwareBaselineResource) Read(ctx context.Context, req resource.ReadRe
 	var node struct {
 		ID string `json:"id"`
 	}
-	text, err := r.client.CallToolText(ctx, "get_node_details", map[string]any{"node_id": state.ServerID.ValueString()})
+	text, err := r.client.CallToolText(ctx, "get_node_details", map[string]any{"node_id": state.NodeID.ValueString()})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read node", err.Error())
 		return
@@ -183,8 +205,9 @@ func (r *FirmwareBaselineResource) Read(ctx context.Context, req resource.ReadRe
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Update re-issues apply_baseline — a baseline_id change or a fresh token both
-// mean "converge again".
+// Update only carries approval tokens forward — every actuation-affecting
+// attribute (serial_number, server_id, baseline_id, dry_run) RequiresReplace,
+// so Update never re-issues apply_baseline.
 func (r *FirmwareBaselineResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan FirmwareBaselineResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -196,12 +219,11 @@ func (r *FirmwareBaselineResource) Update(ctx context.Context, req resource.Upda
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	plan.ServerID = state.ServerID
-
-	if !r.apply(ctx, &plan, &resp.Diagnostics) {
-		return
-	}
-	r.refreshCompliance(ctx, &plan)
+	plan.ID = state.ID
+	plan.NodeID = state.NodeID
+	plan.ComplianceStatus = state.ComplianceStatus
+	plan.LastEvaluatedAt = state.LastEvaluatedAt
+	plan.RuleCount = state.RuleCount
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -210,12 +232,7 @@ func (r *FirmwareBaselineResource) Delete(_ context.Context, _ resource.DeleteRe
 }
 
 func (r *FirmwareBaselineResource) apply(ctx context.Context, plan *FirmwareBaselineResourceModel, diags *diag.Diagnostics) bool {
-	serverID, err := ResolveServerID(ctx, r.client, plan.ServerID.ValueString(), plan.SerialNumber.ValueString())
-	if err != nil {
-		diags.AddError("Failed to resolve node", err.Error())
-		return false
-	}
-	plan.ServerID = types.StringValue(serverID)
+	serverID := plan.NodeID.ValueString()
 
 	args := map[string]any{
 		"server_id":   serverID,
@@ -254,7 +271,7 @@ func (r *FirmwareBaselineResource) apply(ctx context.Context, plan *FirmwareBase
 func (r *FirmwareBaselineResource) refreshCompliance(ctx context.Context, model *FirmwareBaselineResourceModel) {
 	var st baselineStatusResponse
 	text, err := r.client.CallToolText(ctx, "get_baseline_status", map[string]any{
-		"server_id": model.ServerID.ValueString(),
+		"server_id": model.NodeID.ValueString(),
 	})
 	if err != nil {
 		model.ComplianceStatus = types.StringValue("unknown")

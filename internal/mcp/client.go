@@ -158,9 +158,32 @@ func (c *Client) initialize(ctx context.Context) error {
 // Public API
 // -------------------------------------------------------------------
 
+// sensitiveArgKeys are never logged: an approval token is a single-use
+// actuation grant and a debug trace would leak an unconsumed one.
+var sensitiveArgKeys = map[string]bool{
+	"approval":       true,
+	"approval_token": true,
+	"api_key":        true,
+	"password":       true,
+	"bmc_password":   true,
+	"token":          true,
+}
+
+func redactArgs(args map[string]any) map[string]any {
+	redacted := make(map[string]any, len(args))
+	for k, v := range args {
+		if sensitiveArgKeys[strings.ToLower(k)] {
+			redacted[k] = "[REDACTED]"
+			continue
+		}
+		redacted[k] = v
+	}
+	return redacted
+}
+
 // CallTool invokes a named MCP tool and returns the parsed ToolResult.
 func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) (*ToolResult, error) {
-	tflog.Debug(ctx, "mcp tool call", map[string]any{"tool": tool, "args": args})
+	tflog.Debug(ctx, "mcp tool call", map[string]any{"tool": tool, "args": redactArgs(args)})
 
 	result, err := c.call(ctx, "tools/call", ToolCallParams{
 		Name:      tool,

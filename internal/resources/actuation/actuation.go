@@ -98,14 +98,17 @@ type baselineApplyResponse struct {
 }
 
 // ResolveServerID turns the configured node identifier into a node UUID.
-// serverID wins; otherwise the serial is resolved through `search_nodes`
-// (free-text match, then exact serial match to disambiguate).
+// Pass the *configured* server_id (req.Config), not the planned value: a
+// computed server_id carried from prior state must not survive a
+// serial_number change — the serial always resolves through `search_nodes`
+// (exact match to disambiguate), and a configured server_id that disagrees
+// with the resolved serial is an error rather than a silent retarget.
 func ResolveServerID(ctx context.Context, client *mcp.Client, serverID, serial string) (string, error) {
-	if serverID != "" {
-		return serverID, nil
-	}
 	if serial == "" {
-		return "", fmt.Errorf("one of server_id or serial_number is required")
+		if serverID == "" {
+			return "", fmt.Errorf("one of server_id or serial_number is required")
+		}
+		return serverID, nil
 	}
 
 	text, err := client.CallToolText(ctx, "search_nodes", map[string]any{
@@ -127,14 +130,21 @@ func ResolveServerID(ctx context.Context, client *mcp.Client, serverID, serial s
 			matches = append(matches, r.ID)
 		}
 	}
+	var resolved string
 	switch len(matches) {
 	case 0:
 		return "", fmt.Errorf("no MOJO node with serial_number %q", serial)
 	case 1:
-		return matches[0], nil
+		resolved = matches[0]
 	default:
 		return "", fmt.Errorf("serial_number %q matches %d nodes; use server_id to disambiguate", serial, len(matches))
 	}
+	if serverID != "" && !strings.EqualFold(resolved, serverID) {
+		return "", fmt.Errorf(
+			"serial_number %q resolves to node %s, which does not match server_id %s; refusing to actuate a different node",
+			serial, resolved, serverID)
+	}
+	return resolved, nil
 }
 
 // resolveProfileID turns profile_name (+ optional os_family filter) into a

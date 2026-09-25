@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -37,6 +38,7 @@ type ServerResourceModel struct {
 	ID                   types.String `tfsdk:"id"`
 	SerialNumber         types.String `tfsdk:"serial_number"`
 	ServerID             types.String `tfsdk:"server_id"`
+	NodeID               types.String `tfsdk:"node_id"`
 	ProfileID            types.String `tfsdk:"profile_id"`
 	ProfileName          types.String `tfsdk:"profile_name"`
 	OSFamily             types.String `tfsdk:"os_family"`
@@ -84,9 +86,13 @@ When the MCP server delegates provisioning to the coordinator (Phase 1) the resp
 			},
 			"server_id": schema.StringAttribute{
 				Optional:            true,
-				Computed:            true,
-				MarkdownDescription: "MOJO node UUID. Set explicitly or resolved from `serial_number`.",
+				MarkdownDescription: "Pin a MOJO node UUID explicitly instead of resolving `serial_number`. Mutually exclusive in practice with serial resolution — when both are set they must agree.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+			},
+			"node_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Resolved MOJO node UUID the request targets.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"profile_id": schema.StringAttribute{
 				Optional:            true,
@@ -122,7 +128,8 @@ When the MCP server delegates provisioning to the coordinator (Phase 1) the resp
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				MarkdownDescription: "Rehearse the call through every gate without actuating (the ledger intent closes `planned`).",
+				MarkdownDescription: "Rehearse the call through every gate without actuating (the ledger intent closes `planned`). Changing this replaces the resource so a rehearsal never silently masquerades as a live provision.",
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.RequiresReplace()},
 			},
 			"wait_for_completion": schema.BoolAttribute{
 				Optional:            true,
@@ -202,12 +209,20 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	serverID, err := ResolveServerID(ctx, r.client, plan.ServerID.ValueString(), plan.SerialNumber.ValueString())
+	// Resolve from configuration, not plan: a computed server_id carried over
+	// from prior state must not pin a replacement to the previous node.
+	var config ServerResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	serverID, err := ResolveServerID(ctx, r.client, config.ServerID.ValueString(), config.SerialNumber.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to resolve node", err.Error())
 		return
 	}
-	plan.ServerID = types.StringValue(serverID)
+	plan.NodeID = types.StringValue(serverID)
 
 	profileID, err := resolveProfileID(ctx, r.client, plan.ProfileID.ValueString(), plan.ProfileName.ValueString(), plan.OSFamily.ValueString())
 	if err != nil {
@@ -263,6 +278,14 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		)
 	}
 
+	// Persist the accepted request before waiting: if the wait fails or times
+	// out, Terraform retains a tainted record carrying request_id, so a retry
+	// can see/cancel the in-flight request instead of queuing a duplicate.
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if plan.WaitForCompletion.ValueBool() && pr.RequestID != "" {
 		final, err := waitForProvision(
 			ctx, r.client, pr.RequestID,
@@ -275,16 +298,14 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 		}
 		plan.Status = types.StringValue(final.Status)
 		plan.ProgressPct = types.Int64Value(final.Progress)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		if provisionFailed(final.Status) {
 			resp.Diagnostics.AddError(
 				"Provisioning failed",
 				fmt.Sprintf("request %s ended in status %q: %s", final.RequestID, final.Status, final.Error),
 			)
-			return
 		}
 	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *ServerResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -317,7 +338,7 @@ func (r *ServerResource) Read(ctx context.Context, req resource.ReadRequest, res
 	var node struct {
 		ID string `json:"id"`
 	}
-	text, err := r.client.CallToolText(ctx, "get_node_details", map[string]any{"node_id": state.ServerID.ValueString()})
+	text, err := r.client.CallToolText(ctx, "get_node_details", map[string]any{"node_id": state.NodeID.ValueString()})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read node", err.Error())
 		return
@@ -349,7 +370,7 @@ func (r *ServerResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 
 	plan.ID = state.ID
-	plan.ServerID = state.ServerID
+	plan.NodeID = state.NodeID
 	plan.RequestID = state.RequestID
 	plan.Status = state.Status
 	plan.ProgressPct = state.ProgressPct
@@ -379,12 +400,34 @@ func (r *ServerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	_, err := r.client.CallTool(ctx, "cancel_provision", map[string]any{
+	text, err := r.client.CallToolText(ctx, "cancel_provision", map[string]any{
 		"request_id": rid,
 		"approval":   token,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("cancel_provision failed", err.Error())
+		return
+	}
+
+	// Handlers can answer inside the tool result, not the RPC error channel —
+	// a plain-text refusal ("Request not found") must not read as success, or
+	// Terraform would drop the only record of a still-running request.
+	var res struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := mcp.ParseToolText("cancel_provision", text, &res); err != nil {
+		resp.Diagnostics.AddError("cancel_provision refused", err.Error())
+		return
+	}
+	switch strings.ToLower(res.Status) {
+	case "cancelled", "canceled", "delegated": //nolint:misspell
+		// first form: confirmed by the PXE engine; delegated: handed to the coordinator.
+	default:
+		resp.Diagnostics.AddError(
+			"Unexpected cancel_provision response",
+			fmt.Sprintf("status %q: %s — request %s left in state", res.Status, res.Message, rid),
+		)
 	}
 }
 
