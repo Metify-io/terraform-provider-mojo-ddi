@@ -5,6 +5,7 @@ package actuation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Metify-io/terraform-provider-mojo-ddi/internal/mcp"
@@ -40,6 +41,7 @@ type FirmwareBaselineResourceModel struct {
 	NodeID           types.String `tfsdk:"node_id"`
 	BaselineID       types.String `tfsdk:"baseline_id"`
 	ApprovalToken    types.String `tfsdk:"approval_token"`
+	PlanJSON         types.String `tfsdk:"plan_json"`
 	DryRun           types.Bool   `tfsdk:"dry_run"`
 	ComplianceStatus types.String `tfsdk:"compliance_status"`
 	LastEvaluatedAt  types.String `tfsdk:"last_evaluated_at"`
@@ -95,6 +97,10 @@ Destroy removes the binding from state only — a baseline cannot be un-applied.
 				Optional:            true,
 				Sensitive:           true,
 				MarkdownDescription: "Coordinator-minted approval token (`v1.<payload>.<sig>`) for the `apply_baseline` call — required on a live apply of this destructive tool, consumed single-use.",
+			},
+			"plan_json": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "JSON plan document presented verbatim as the `plan` argument on `apply_baseline`. Required when the approval token was minted with `--plan-hash`: the boundary re-hashes the plan canonically and refuses the call unless it matches the hash the approver signed.",
 			},
 			"dry_run": schema.BoolAttribute{
 				Optional:            true,
@@ -243,6 +249,14 @@ func (r *FirmwareBaselineResource) apply(ctx context.Context, plan *FirmwareBase
 	}
 	if plan.DryRun.ValueBool() {
 		args["dry_run"] = true
+	}
+	if v := plan.PlanJSON.ValueString(); v != "" {
+		var doc any
+		if err := json.Unmarshal([]byte(v), &doc); err != nil {
+			diags.AddError("Invalid plan_json", fmt.Sprintf("plan_json is not valid JSON: %s", err))
+			return false
+		}
+		args["plan"] = doc
 	}
 
 	text, err := r.client.CallToolText(ctx, "apply_baseline", args)
