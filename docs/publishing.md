@@ -66,7 +66,7 @@ for the first publish.
 ```hcl
 terraform {
   required_providers {
-    mojo = { source = "metify/mojo-ddi", version = "~> 0.1" }
+    mojo = { source = "metify-io/mojo-ddi", version = "~> 0.1" }
   }
 }
 ```
