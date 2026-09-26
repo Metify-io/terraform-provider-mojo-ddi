@@ -50,6 +50,10 @@ resource "mojo_server" "dl360" {
 
   dry_run             = true           # flip to false + approval_token to actuate
   approval_token      = var.approval_token
+
+  # When the token was minted with --plan-hash, the reviewed plan document
+  # must ride on the call or the boundary refuses:
+  #   plan_json = file("${path.module}/plan.json")
   wait_for_completion = true
   wait_timeout_seconds  = 3600
   poll_interval_seconds = 30
