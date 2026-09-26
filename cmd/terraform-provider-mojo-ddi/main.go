@@ -21,7 +21,7 @@ func main() {
 	flag.Parse()
 
 	err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
-		Address: "registry.terraform.io/metify/mojo-ddi",
+		Address: "registry.terraform.io/metify-io/mojo-ddi",
 		Debug:   debug,
 	})
 	if err != nil {

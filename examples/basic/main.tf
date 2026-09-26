@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     mojo = {
-      source  = "metify/mojo-ddi"
+      source  = "metify-io/mojo-ddi"
       version = "~> 0.1"
     }
   }
