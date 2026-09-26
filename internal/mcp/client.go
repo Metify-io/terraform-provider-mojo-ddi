@@ -129,7 +129,7 @@ func (c *Client) initialize(ctx context.Context) error {
 		"capabilities": map[string]any{},
 	}
 
-	result, err := c.call(ctx, "initialize", params)
+	result, header, err := c.call(ctx, "initialize", params)
 	if err != nil {
 		return err
 	}
@@ -137,9 +137,16 @@ func (c *Client) initialize(ctx context.Context) error {
 	var initResult struct {
 		SessionID string `json:"sessionId"`
 	}
-	if err := json.Unmarshal(result, &initResult); err == nil && initResult.SessionID != "" {
+	// Streamable-HTTP servers (rmcp) hand the session id back in the
+	// `Mcp-Session-Id` response header; a sessionId in the result body is the
+	// legacy channel. Prefer the header, fall back to the body.
+	sessionID := header.Get("Mcp-Session-Id")
+	if err := json.Unmarshal(result, &initResult); err == nil && sessionID == "" {
+		sessionID = initResult.SessionID
+	}
+	if sessionID != "" {
 		c.mu.Lock()
-		c.sessionID = initResult.SessionID
+		c.sessionID = sessionID
 		c.mu.Unlock()
 	}
 
@@ -148,7 +155,7 @@ func (c *Client) initialize(ctx context.Context) error {
 
 	tflog.Debug(ctx, "mcp client initialized", map[string]any{
 		"endpoint":   c.endpoint,
-		"session_id": initResult.SessionID,
+		"session_id": sessionID,
 	})
 
 	return nil
@@ -158,11 +165,34 @@ func (c *Client) initialize(ctx context.Context) error {
 // Public API
 // -------------------------------------------------------------------
 
+// sensitiveArgKeys are never logged: an approval token is a single-use
+// actuation grant and a debug trace would leak an unconsumed one.
+var sensitiveArgKeys = map[string]bool{
+	"approval":       true,
+	"approval_token": true,
+	"api_key":        true,
+	"password":       true,
+	"bmc_password":   true,
+	"token":          true,
+}
+
+func redactArgs(args map[string]any) map[string]any {
+	redacted := make(map[string]any, len(args))
+	for k, v := range args {
+		if sensitiveArgKeys[strings.ToLower(k)] {
+			redacted[k] = "[REDACTED]"
+			continue
+		}
+		redacted[k] = v
+	}
+	return redacted
+}
+
 // CallTool invokes a named MCP tool and returns the parsed ToolResult.
 func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) (*ToolResult, error) {
-	tflog.Debug(ctx, "mcp tool call", map[string]any{"tool": tool, "args": args})
+	tflog.Debug(ctx, "mcp tool call", map[string]any{"tool": tool, "args": redactArgs(args)})
 
-	result, err := c.call(ctx, "tools/call", ToolCallParams{
+	result, _, err := c.call(ctx, "tools/call", ToolCallParams{
 		Name:      tool,
 		Arguments: args,
 	})
@@ -190,19 +220,44 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 // CallToolJSON calls a tool and unmarshals the first text content block as JSON
 // into dest. This is the standard pattern for CRUD operations.
 func (c *Client) CallToolJSON(ctx context.Context, tool string, args map[string]any, dest any) error {
-	result, err := c.CallTool(ctx, tool, args)
+	text, err := c.CallToolText(ctx, tool, args)
 	if err != nil {
 		return err
 	}
 
-	if len(result.Content) == 0 {
-		return fmt.Errorf("tool %q returned empty content", tool)
-	}
-
-	if err := json.Unmarshal([]byte(result.Content[0].Text), dest); err != nil {
+	if err := json.Unmarshal([]byte(text), dest); err != nil {
 		return fmt.Errorf("unmarshal tool %q response: %w", tool, err)
 	}
 
+	return nil
+}
+
+// CallToolText calls a tool and returns the first text content block verbatim.
+// Several mojo-mcp tools return either a JSON document or a plain-text error
+// message in the same channel, so callers that need both should use this and
+// decide per payload (see ParseToolText).
+func (c *Client) CallToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
+	result, err := c.CallTool(ctx, tool, args)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result.Content) == 0 {
+		return "", fmt.Errorf("tool %q returned empty content", tool)
+	}
+
+	return result.Content[0].Text, nil
+}
+
+// ParseToolText unmarshals a text content block into dest. mojo-mcp handlers
+// signal failures two ways: a JSON-RPC error (already surfaced by CallTool) or
+// a plain-text message inside a successful result ("Invalid UUID ...",
+// "Baseline ... not found"). When the payload is not JSON it is returned as a
+// tool-level error so the whole message reaches the Terraform diagnostic.
+func ParseToolText(tool, text string, dest any) error {
+	if err := json.Unmarshal([]byte(text), dest); err != nil {
+		return &MCPError{Code: "tool_message", Message: strings.TrimSpace(text)}
+	}
 	return nil
 }
 
@@ -210,8 +265,9 @@ func (c *Client) CallToolJSON(ctx context.Context, tool string, args map[string]
 // Transport
 // -------------------------------------------------------------------
 
-// call makes a JSON-RPC call to the MCP endpoint and returns the raw result.
-func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+// call makes a JSON-RPC call to the MCP endpoint and returns the raw result
+// plus the response headers (the session id rides in Mcp-Session-Id).
+func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, http.Header, error) {
 	id := c.idGen.Add(1)
 
 	req := rpcRequest{
@@ -223,12 +279,12 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("marshal rpc request: %w", err)
+		return nil, nil, fmt.Errorf("marshal rpc request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build http request: %w", err)
+		return nil, nil, fmt.Errorf("build http request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -246,31 +302,33 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, nil, fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
+	header := resp.Header
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(b))
+		return nil, header, fmt.Errorf("http %d: %s", resp.StatusCode, string(b))
 	}
 
-	contentType := resp.Header.Get("Content-Type")
+	contentType := header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/event-stream") {
-		return c.readSSEResponse(resp.Body, id)
+		result, err := c.readSSEResponse(resp.Body, id)
+		return result, header, err
 	}
 
 	// Plain JSON response
 	var rpcResp rpcResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return nil, fmt.Errorf("decode rpc response: %w", err)
+		return nil, header, fmt.Errorf("decode rpc response: %w", err)
 	}
 
 	if rpcResp.Error != nil {
-		return nil, mapRPCError(rpcResp.Error)
+		return nil, header, mapRPCError(rpcResp.Error)
 	}
 
-	return rpcResp.Result, nil
+	return rpcResp.Result, header, nil
 }
 
 // notify sends a JSON-RPC notification (no response expected).
@@ -389,21 +447,32 @@ func asMCPError(err error, target **MCPError) bool {
 
 // mapRPCError converts a JSON-RPC error to a typed MCPError.
 func mapRPCError(e *rpcError) error {
-	// Try to parse a MOJO-specific error payload from Data
+	// Try to parse a MOJO-specific error payload from Data. The actuation
+	// boundary carries structured refusals here — e.g. the quota gate sends
+	// {"error": "quota_exceeded", "dimension": ..., "pool": ...}.
 	var mojoErr struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
+		Error   string `json:"error"`
 	}
 	if e.Data != nil {
 		_ = json.Unmarshal(e.Data, &mojoErr)
 	}
 
-	if mojoErr.Code != "" {
-		return &MCPError{Code: mojoErr.Code, Message: mojoErr.Message}
+	code := mojoErr.Code
+	if code == "" {
+		code = mojoErr.Error
+	}
+	if code != "" {
+		msg := mojoErr.Message
+		if msg == "" {
+			msg = e.Message
+		}
+		return &MCPError{Code: code, Message: msg}
 	}
 
 	// Fall back to generic mapping by RPC error code
-	code := "unknown"
+	code = "unknown"
 	switch e.Code {
 	case -32001:
 		code = "resource_not_found"
