@@ -9,8 +9,8 @@ build:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/terraform-provider-mojo-ddi
 
 install: build
-	mkdir -p ~/.terraform.d/plugins/registry.terraform.io/metify/mojo-ddi/$(VERSION)/linux_amd64
-	cp $(BINARY) ~/.terraform.d/plugins/registry.terraform.io/metify/mojo-ddi/$(VERSION)/linux_amd64/
+	mkdir -p ~/.terraform.d/plugins/registry.terraform.io/metify-io/mojo-ddi/$(VERSION)/linux_amd64
+	cp $(BINARY) ~/.terraform.d/plugins/registry.terraform.io/metify-io/mojo-ddi/$(VERSION)/linux_amd64/
 
 test:
 	go test -v -count=1 ./...
