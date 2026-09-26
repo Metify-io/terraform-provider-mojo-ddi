@@ -5,6 +5,7 @@ package actuation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ type ServerResourceModel struct {
 	BaselineID           types.String `tfsdk:"baseline_id"`
 	ApprovalToken        types.String `tfsdk:"approval_token"`
 	DestroyApprovalToken types.String `tfsdk:"destroy_approval_token"`
+	PlanJSON             types.String `tfsdk:"plan_json"`
 	DryRun               types.Bool   `tfsdk:"dry_run"`
 	WaitForCompletion    types.Bool   `tfsdk:"wait_for_completion"`
 	WaitTimeout          types.Int64  `tfsdk:"wait_timeout_seconds"`
@@ -123,6 +125,10 @@ When the MCP server delegates provisioning to the coordinator (Phase 1) the resp
 				Optional:            true,
 				Sensitive:           true,
 				MarkdownDescription: "Approval token for `cancel_provision` on `terraform destroy`. When unset, destroy only removes the Terraform record — the MOJO-side request is left alone.",
+			},
+			"plan_json": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "JSON plan document presented verbatim as the `plan` argument on `provision_server` (and `cancel_provision` on destroy). Required when the approval token was minted with `--plan-hash`: the boundary re-hashes the plan canonically and refuses the call unless it matches the hash the approver signed.",
 			},
 			"dry_run": schema.BoolAttribute{
 				Optional:            true,
@@ -242,6 +248,14 @@ func (r *ServerResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	if plan.DryRun.ValueBool() {
 		args["dry_run"] = true
+	}
+	if v := plan.PlanJSON.ValueString(); v != "" {
+		var doc any
+		if err := json.Unmarshal([]byte(v), &doc); err != nil {
+			resp.Diagnostics.AddError("Invalid plan_json", fmt.Sprintf("plan_json is not valid JSON: %s", err))
+			return
+		}
+		args["plan"] = doc
 	}
 
 	text, err := r.client.CallToolText(ctx, "provision_server", args)
@@ -400,10 +414,17 @@ func (r *ServerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	text, err := r.client.CallToolText(ctx, "cancel_provision", map[string]any{
+	args := map[string]any{
 		"request_id": rid,
 		"approval":   token,
-	})
+	}
+	if v := state.PlanJSON.ValueString(); v != "" {
+		var doc any
+		if err := json.Unmarshal([]byte(v), &doc); err == nil {
+			args["plan"] = doc
+		}
+	}
+	text, err := r.client.CallToolText(ctx, "cancel_provision", args)
 	if err != nil {
 		resp.Diagnostics.AddError("cancel_provision failed", err.Error())
 		return
